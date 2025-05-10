@@ -1,0 +1,87 @@
+import io
+import time
+import numpy as np
+from picamera import PiCamera
+from PIL import Image
+import tensorflow as tf
+
+# Initialize the camera
+camera = PiCamera()
+camera.resolution = (640, 640)  # Match your training size
+camera.rotation = 180  # Adjust if needed
+
+# Load your trained model
+model = tf.keras.models.load_model('Waste_Wise_Model.h5', compile=False)
+
+# Class names from your training (adjust if different)
+CLASS_NAMES = ['Metal', 'Paper', 'Plastic']  # Alphabetical order from folder names
+
+def capture_image():
+    """Capture an image from the Pi Camera and return it as a PIL Image"""
+    stream = io.BytesIO()
+    camera.capture(stream, format='jpeg', quality=85)  # Reduced quality for speed
+    stream.seek(0)
+    image = Image.open(stream)
+    return image
+
+def preprocess_image(image):
+    """Preprocess the image to match training conditions"""
+    # Convert to array and normalize (if you normalized during training)
+    img_array = np.array(image) / 255.0
+    
+    # Add batch dimension
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    return img_array
+
+def predict_image(image):
+    """Make a prediction on the image using your trained model"""
+    processed_image = preprocess_image(image)
+    predictions = model.predict(processed_image)
+    predicted_class = CLASS_NAMES[np.argmax(predictions[0])]
+    confidence = np.max(predictions[0])
+    return predicted_class, confidence
+
+def execute_condition(predicted_class):
+    """Execute different conditions based on waste type"""
+    if predicted_class == 'Plastic':
+        print("Plastic detected - activate plastic recycling mechanism")
+        # Example: GPIO.output(plastic_pin, GPIO.HIGH)
+        
+    elif predicted_class == 'Metal':
+        print("Metal detected - activate metal collection bin")
+        # Example: GPIO.output(metal_pin, GPIO.HIGH)
+        
+    elif predicted_class == 'Paper':
+        print("Paper detected - activate paper compactor")
+        # Example: GPIO.output(paper_pin, GPIO.HIGH)
+
+def main():
+    try:
+        # Camera warm-up
+        time.sleep(2)
+        print("Waste Wise Classifier Ready...")
+        
+        while True:
+            # Capture and process
+            image = capture_image()
+            predicted_class, confidence = predict_image(image)
+            
+            # Only act if confidence is high enough
+            if confidence > 0.7:  # Adjust threshold as needed
+                print(f"Detected: {predicted_class} ({confidence:.2%})")
+                execute_condition(predicted_class)
+            else:
+                print(f"Uncertain prediction: {predicted_class} ({confidence:.2%}) - ignoring")
+            
+            # Adjust delay based on your processing speed
+            time.sleep(3)
+            
+    except KeyboardInterrupt:
+        print("System stopped by user")
+    finally:
+        camera.close()
+        print("Camera resources released")
+
+if __name__ == "__main__":
+    main()
