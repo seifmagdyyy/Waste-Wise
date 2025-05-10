@@ -1,0 +1,68 @@
+import RPi.GPIO as GPIO
+import time
+
+# Servo Configuration
+SERVO_PIN_1 = 26  # Verify this is the correct GPIO pin
+SERVO_PIN_2 = 27
+SERVO_PIN_3 = 22
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(SERVO_PIN_1, GPIO.OUT)
+GPIO.setup(SERVO_PIN_2, GPIO.OUT)
+GPIO.setup(SERVO_PIN_3, GPIO.OUT)
+
+# PWM Setup
+pwm1 = GPIO.PWM(SERVO_PIN_1, 50)  # 50Hz frequency
+pwm2 = GPIO.PWM(SERVO_PIN_2, 50)
+pwm3 = GPIO.PWM(SERVO_PIN_3, 50)
+
+pwm1.start(0)
+pwm2.start(0)
+pwm3.start(0)
+
+def set_servo_speed(pwm, speed):
+    """Set speed for continuous rotation servo (-100 to 100)"""
+    duty_cycle = 7.5 + (speed * 2.5 / 100)
+    pwm.ChangeDutyCycle(duty_cycle)
+    print(f"Speed: {speed}% | Duty Cycle: {duty_cycle}%")
+
+def stop_servo(pwm):
+    """Stop the servo by setting duty cycle to 0"""
+    pwm.ChangeDutyCycle(0)
+    time.sleep(3)  # Small delay to ensure PWM stops
+
+try:
+    # Test Servo 1 (CCW then CW)
+    print("Testing Servo 1")
+    set_servo_speed(pwm1, -50)  # Rotate CCW
+    time.sleep(3)
+    stop_servo(pwm1)  # Stop before changing direction
+    set_servo_speed(pwm1,100)   # Rotate CW
+    time.sleep(4)
+    stop_servo(pwm1)  # Stop before next servo
+    
+    # Test Servo 2 (CCW then CW)
+    print("\nTesting Servo 2")
+    set_servo_speed(pwm2, -75)  # Rotate CCW
+    time.sleep(2.5)
+    stop_servo(pwm2)  # Stop before changing direction
+    set_servo_speed(pwm2,100)   # Rotate CW
+    time.sleep(2)
+    stop_servo(pwm2)  # Stop before next servo
+    
+    # Test Servo 3 (CCW then CW)
+    print("\nTesting Servo 3")
+    set_servo_speed(pwm3, 76)   # Rotate CW (adjust if needed)
+    time.sleep(2.5)
+    stop_servo(pwm3)  # Stop before changing direction
+    set_servo_speed(pwm3, -50)  # Rotate CCW (adjust if needed)
+    time.sleep(3)
+    stop_servo(pwm3)  # Stop at the end
+
+except KeyboardInterrupt:
+    pass
+
+finally:
+    pwm1.stop()
+    pwm2.stop()
+    pwm3.stop()
+    GPIO.cleanup()
