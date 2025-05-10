@@ -1,0 +1,98 @@
+import RPi.GPIO as GPIO
+import time
+
+# Sensor Configuration
+SENSORS = {
+    "Sensor1": {"trigger": 23, "echo": 24, "threshold": 15},
+    "Sensor2": {"trigger": 17, "echo": 27, "threshold": 15},
+    "Sensor3": {"trigger": 22, "echo": 10, "threshold": 15}
+}
+
+# Change detection settings
+CHANGE_TOLERANCE = 15  # cm (minimum change to count as a change)
+MEASUREMENT_INTERVAL = 1.0  # seconds
+
+# Initialize variables
+previous_distances = {name: 0 for name in SENSORS}
+change_counts = {name: 0 for name in SENSORS}
+
+def setup():
+    """Initialize GPIO pins for all sensors"""
+    GPIO.setmode(GPIO.BCM)
+    for sensor in SENSORS.values():
+        GPIO.setup(sensor["trigger"], GPIO.OUT)
+        GPIO.setup(sensor["echo"], GPIO.IN)
+        GPIO.output(sensor["trigger"], False)
+    time.sleep(1)  # Sensor settling time
+    print("Ultrasonic Sensor Monitoring System Initialized\n")
+
+def get_distance(trigger_pin, echo_pin):
+    """Measure and return distance in centimeters"""
+    GPIO.output(trigger_pin, True)
+    time.sleep(0.00001)
+    GPIO.output(trigger_pin, False)
+
+    pulse_start = time.time()
+    pulse_end = time.time()
+
+    timeout = time.time() + 0.1
+    while GPIO.input(echo_pin) == 0 and time.time() < timeout:
+        pulse_start = time.time()
+
+    timeout = time.time() + 0.1
+    while GPIO.input(echo_pin) == 1 and time.time() < timeout:
+        pulse_end = time.time()
+
+    pulse_duration = pulse_end - pulse_start
+    distance = pulse_duration * 17150
+    return round(distance, 2)
+
+def check_threshold(sensor_name, distance):
+    """Check if distance is below threshold and alert"""
+    threshold = SENSORS[sensor_name]["threshold"]
+    if distance < threshold:
+        print(f"ALERT: {sensor_name} distance {distance}cm below threshold {threshold}cm!")
+
+def check_changes(sensor_name, current_distance):
+    """Check for significant distance changes and update count"""
+    global previous_distances, change_counts
+    
+    if abs(current_distance - previous_distances[sensor_name]) > CHANGE_TOLERANCE:
+        change_counts[sensor_name] += 1
+        previous_distances[sensor_name] = current_distance
+        print(f"Change detected on {sensor_name} (Count: {change_counts[sensor_name]})")
+
+def display_status():
+    """Display current status of all sensors"""
+    print("\n" + "-"*50)
+    print(f"{'Sensor':<10} | {'Distance':>8} | {'Changes':>8} | {'Threshold':>10}")
+    print("-"*50)
+    for name in SENSORS:
+        print(f"{name:<10} | {previous_distances[name]:>8.2f}cm | {change_counts[name]:>8} | {SENSORS[name]['threshold']:>8}cm")
+    print("-"*50 + "\n")
+
+def main():
+    setup()
+    
+    try:
+        # Initial readings
+        for name in SENSORS:
+            previous_distances[name] = get_distance(SENSORS[name]["trigger"], SENSORS[name]["echo"])
+        
+        while True:
+            for name, pins in SENSORS.items():
+                current_distance = get_distance(pins["trigger"], pins["echo"])
+                
+                check_threshold(name, current_distance)
+                check_changes(name, current_distance)
+            
+            display_status()
+            time.sleep(MEASUREMENT_INTERVAL)
+            
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped")
+    finally:
+        GPIO.cleanup()
+
+if __name__ == "__main__":
+    main()
