@@ -1,87 +1,91 @@
-import io
+import cv2
+from ultralytics import YOLO
+import RPi.GPIO as GPIO
 import time
-import numpy as np
-from picamera import PiCamera
-from PIL import Image
-import tensorflow as tf
+
+
+
+# Servo Configuration
+SERVO_PIN_1 = 26  # Verify this is the correct GPIO pin
+SERVO_PIN_2 = 27
+SERVO_PIN_3 = 22
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(SERVO_PIN_1, GPIO.OUT)
+GPIO.setup(SERVO_PIN_2, GPIO.OUT)
+GPIO.setup(SERVO_PIN_3, GPIO.OUT)
+
+# PWM Setup
+pwm1 = GPIO.PWM(SERVO_PIN_1, 50)  # 50Hz frequency
+pwm2 = GPIO.PWM(SERVO_PIN_2, 50)
+pwm3 = GPIO.PWM(SERVO_PIN_3, 50)
+
+pwm1.start(0)
+pwm2.start(0)
+pwm3.start(0)
+
+def set_servo_speed(pwm, speed):
+    """Set speed for continuous rotation servo (-100 to 100)"""
+    duty_cycle = 7.5 + (speed * 2.5 / 100)
+    pwm.ChangeDutyCycle(duty_cycle)
+    print(f"Speed: {speed}% | Duty Cycle: {duty_cycle}%")
+
+def stop_servo(pwm):
+    """Stop the servo by setting duty cycle to 0"""
+    pwm.ChangeDutyCycle(0)
+    time.sleep(3)  # Small delay to ensure PWM stops
+
+# Load a model
+model = YOLO("yolo11n-cls.pt")  # load an official model
+model = YOLO("/home/seifmagdy/Desktop/Yolo/best (2).pt")  # load a custom model
 
 # Initialize the camera
-camera = PiCamera()
-camera.resolution = (640, 640)  # Match your training size
-camera.rotation = 180  # Adjust if needed
+cam = cv2.VideoCapture(0)  # Capture image
 
-# Load your trained model
-model = tf.keras.models.load_model('Waste_Wise_Model.h5', compile=False)
-
-# Class names from your training (adjust if different)
-CLASS_NAMES = ['Metal', 'Paper', 'Plastic']  # Alphabetical order from folder names
-
-def capture_image():
-    """Capture an image from the Pi Camera and return it as a PIL Image"""
-    stream = io.BytesIO()
-    camera.capture(stream, format='jpeg', quality=85)  # Reduced quality for speed
-    stream.seek(0)
-    image = Image.open(stream)
-    return image
-
-def preprocess_image(image):
-    """Preprocess the image to match training conditions"""
-    # Convert to array and normalize (if you normalized during training)
-    img_array = np.array(image) / 255.0
+s, img = cam.read()
+if s:  # Frame captured without any errors
+    cv2.namedWindow("cam-test", cv2.WINDOW_AUTOSIZE)  # Corrected here
+    cv2.imshow("cam-test", img)
+    cv2.waitKey(100)
+    cv2.destroyWindow("cam-test")
+    cv2.imwrite("image1.jpg", img)  # Save image
     
-    # Add batch dimension
-    img_array = np.expand_dims(img_array, axis=0)
-    
-    return img_array
 
-def predict_image(image):
-    """Make a prediction on the image using your trained model"""
-    processed_image = preprocess_image(image)
-    predictions = model.predict(processed_image)
-    predicted_class = CLASS_NAMES[np.argmax(predictions[0])]
-    confidence = np.max(predictions[0])
-    return predicted_class, confidence
+# Predict with the model
+results = model(img)
 
-def execute_condition(predicted_class):
-    """Execute different conditions based on waste type"""
-    if predicted_class == 'Plastic':
-        print("Plastic detected - activate plastic recycling mechanism")
-        # Example: GPIO.output(plastic_pin, GPIO.HIGH)
-        
-    elif predicted_class == 'Metal':
-        print("Metal detected - activate metal collection bin")
-        # Example: GPIO.output(metal_pin, GPIO.HIGH)
-        
-    elif predicted_class == 'Paper':
-        print("Paper detected - activate paper compactor")
-        # Example: GPIO.output(paper_pin, GPIO.HIGH)
+probs = results[0].probs #Save the highest prediction probability
 
-def main():
-    try:
-        # Camera warm-up
-        time.sleep(2)
-        print("Waste Wise Classifier Ready...")
-        
-        while True:
-            # Capture and process
-            image = capture_image()
-            predicted_class, confidence = predict_image(image)
-            
-            # Only act if confidence is high enough
-            if confidence > 0.7:  # Adjust threshold as needed
-                print(f"Detected: {predicted_class} ({confidence:.2%})")
-                execute_condition(predicted_class)
-            else:
-                print(f"Uncertain prediction: {predicted_class} ({confidence:.2%}) - ignoring")
-            
-            # Adjust delay based on your processing speed
-            time.sleep(3)
-            
-    except KeyboardInterrupt:
-        print("System stopped by user")
-    finally:
-        camera.close()
-        print("Camera resources released")
+prediction = probs.top1
 
-if __name__ == "__main__":
-    main()
+
+if prediction == 2: #Prediction is Plastic
+    print("Plastic")
+    set_servo_speed(pwm1, -50)  # Rotate CCW
+    time.sleep(3)
+    stop_servo(pwm1)  # Stop before changing direction
+    set_servo_speed(pwm1,100)   # Rotate CW
+    time.sleep(4)
+    stop_servo(pwm1)  # Stop before next servo
+
+elif prediction == 0: #Prediction is Metal
+    print("Metal")
+    set_servo_speed(pwm2, -75)  # Rotate CCW
+    time.sleep(2)
+    stop_servo(pwm2)  # Stop before changing direction
+    set_servo_speed(pwm2,100)   # Rotate CW
+    time.sleep(1.7)
+    stop_servo(pwm2)  # Stop before next servo
+
+elif prediction == 1: #Prediction is Paper 
+    print("Metal")
+    set_servo_speed(pwm3, 76)   # Rotate CW (adjust if needed)
+    time.sleep(2.5)
+    stop_servo(pwm3)  # Stop before changing direction
+    set_servo_speed(pwm3, -50)  # Rotate CCW (adjust if needed)
+    time.sleep(2)
+    stop_servo(pwm3)  # Stop at the end
+
+pwm1.stop()
+pwm2.stop()
+pwm3.stop()
+GPIO.cleanup()
